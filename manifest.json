@@ -1,0 +1,10 @@
+{
+  "name": "Poultry Farm Manager",
+  "short_name": "Poultry Farm",
+  "description": "Poultry farm rooster stock, sales and history manager",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f3f8f5",
+  "theme_color": "#087443",
+  "icons": []
+}

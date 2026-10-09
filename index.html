@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#087443">
+  <title>Poultry Farm Manager</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <section id="loginView" class="auth-shell">
+      <div class="auth-card">
+        <div class="brand-mark">🐓</div>
+        <h1>Poultry Farm Manager</h1>
+        <p class="muted">Track stock, calculate sales, and keep your records.</p>
+        <form id="loginForm">
+          <label for="loginUsername">Username</label>
+          <input id="loginUsername" autocomplete="username" required placeholder="Enter username">
+          <label for="loginPassword">Password</label>
+          <input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Enter password">
+          <button class="primary full" type="submit">Login</button>
+          <p id="loginError" class="error" role="alert"></p>
+        </form>
+        <div class="hint"><strong>First login:</strong> username <code>admin</code> · password <code>Farm@123</code><br>Change the password after logging in.</div>
+      </div>
+    </section>
+
+    <section id="mainView" class="hidden">
+      <header class="topbar">
+        <div class="brand"><span class="brand-icon">🐓</span><div><strong>Poultry Farm</strong><small>Management</small></div></div>
+        <div class="top-actions"><span id="currentUser" class="user-chip"></span><button id="logoutBtn" class="outline small">Logout</button></div>
+      </header>
+      <main class="container">
+        <div class="welcome-row"><div><p class="eyebrow">FARM OVERVIEW</p><h1 id="welcomeTitle">Dashboard</h1></div><div id="todayLabel" class="date-pill"></div></div>
+        <div class="stats-grid">
+          <article class="stat-card"><span class="stat-icon orange">🐓</span><div><span>Total stock</span><strong id="totalStock">0</strong></div></article>
+          <article class="stat-card"><span class="stat-icon blue">✓</span><div><span>Roosters remaining</span><strong id="remainingStock">0</strong></div></article>
+          <article class="stat-card"><span class="stat-icon green">₹</span><div><span>Total sales</span><strong id="totalSales">₹0</strong></div></article>
+          <article class="stat-card"><span class="stat-icon purple">▤</span><div><span>Roosters sold</span><strong id="soldCount">0</strong></div></article>
+        </div>
+
+        <nav class="tabs" aria-label="App sections">
+          <button class="tab active" data-tab="sell">＋ New Sale</button>
+          <button class="tab" data-tab="history">▤ Sales History</button>
+          <button class="tab admin-only" data-tab="stock">🐓 Manage Stock</button>
+          <button class="tab admin-only" data-tab="users">♙ Manage Users</button>
+          <button class="tab" data-tab="settings">⚙ Settings</button>
+        </nav>
+
+        <section id="sellPanel" class="panel tab-panel">
+          <div class="panel-heading"><div><h2>Record a Sale</h2><p class="muted">Enter the number sold, choose the price per kilogram, and enter total weight.</p></div></div>
+          <form id="saleForm" class="form-grid">
+            <div class="field"><label for="roostersSold">Number of roosters sold</label><input id="roostersSold" type="number" min="1" step="1" required placeholder="e.g. 2"><small id="stockHelp">Available: 0</small></div>
+            <div class="field"><label>Price per 1 kg</label><div class="price-options">
+              <label class="price-option"><input type="radio" name="price" value="300" checked><span>₹300</span></label>
+              <label class="price-option"><input type="radio" name="price" value="350"><span>₹350</span></label>
+              <label class="price-option"><input type="radio" name="price" value="400"><span>₹400</span></label>
+              <label class="price-option"><input type="radio" name="price" value="450"><span>₹450</span></label>
+            </div></div>
+            <div class="field"><label for="weightKg">Total weight (kg)</label><input id="weightKg" type="number" min="0.01" step="0.01" required placeholder="e.g. 5.5"><small>Enter the combined weight of the roosters in this sale.</small></div>
+            <div class="field"><label for="customerName">Customer name (optional)</label><input id="customerName" maxlength="100" placeholder="Enter customer name"></div>
+            <div class="estimate-card"><div><span>Selected rate</span><strong id="ratePreview">₹300 / kg</strong></div><div><span>Estimated amount</span><strong id="amountPreview">₹0</strong></div></div>
+            <div class="form-actions"><button class="primary" type="submit">Calculate & Save Sale</button><button class="outline" type="reset" id="resetSale">Clear</button></div>
+            <p id="saleMessage" class="message full-span" aria-live="polite"></p>
+          </form>
+        </section>
+
+        <section id="historyPanel" class="panel tab-panel hidden">
+          <div class="panel-heading history-heading"><div><h2>Sales History</h2><p class="muted">Saved on this device and retained after closing the app.</p></div><div class="history-filters"><input id="historySearch" placeholder="Search customer or record" aria-label="Search history"><input id="historyDate" type="date" aria-label="Filter by date"><button id="clearFilters" class="outline small">Clear filters</button></div></div>
+          <div id="historyList" class="history-list"></div>
+          <div id="historyEmpty" class="empty-state hidden">No sales recorded yet.</div>
+        </section>
+
+        <section id="stockPanel" class="panel tab-panel hidden admin-only">
+          <div class="panel-heading"><div><h2>Manage Rooster Stock</h2><p class="muted">Add newly arrived roosters to the current stock. Sold quantities are calculated from the sales history.</p></div></div>
+          <form id="stockForm" class="stock-form"><div class="field"><label for="stockAdd">Number of new roosters added</label><input id="stockAdd" type="number" min="1" step="1" required placeholder="e.g. 20"></div><button class="primary" type="submit">Add to Stock</button></form>
+          <div class="stock-note"><strong>Stock calculation</strong><p>Total stock = starting stock + stock additions. Remaining roosters = total stock − roosters sold. Deleting a sale restores those roosters automatically.</p></div>
+          <h3>Stock additions</h3><div id="stockHistory" class="history-list"></div>
+        </section>
+
+        <section id="usersPanel" class="panel tab-panel hidden admin-only">
+          <div class="panel-heading"><div><h2>Manage Users</h2><p class="muted">Only the admin can approve access by creating accounts.</p></div></div>
+          <form id="userForm" class="user-form">
+            <div class="field"><label for="newUsername">Username</label><input id="newUsername" required minlength="3" maxlength="30" pattern="[A-Za-z0-9_.-]+" placeholder="e.g. worker01"></div>
+            <div class="field"><label for="newPassword">Temporary password</label><input id="newPassword" type="password" required minlength="6" placeholder="At least 6 characters"></div>
+            <div class="field"><label for="newRole">Permission level</label><select id="newRole"><option value="user">User — record and view sales</option><option value="admin">Admin — full control</option></select></div>
+            <button class="primary" type="submit">＋ Create Account</button>
+          </form>
+          <div id="userMessage" class="message" aria-live="polite"></div>
+          <h3>Approved accounts</h3><div id="userList" class="user-list"></div>
+        </section>
+
+        <section id="settingsPanel" class="panel tab-panel hidden">
+          <div class="panel-heading"><div><h2>Settings & Security</h2><p class="muted">Keep your account secure and export a backup of your records.</p></div></div>
+          <form id="passwordForm" class="settings-form"><h3>Change my password</h3><div class="field"><label for="oldPassword">Current password</label><input id="oldPassword" type="password" required></div><div class="field"><label for="newOwnPassword">New password</label><input id="newOwnPassword" type="password" minlength="6" required></div><button class="primary" type="submit">Update Password</button><p id="passwordMessage" class="message"></p></form>
+          <div class="backup-row"><div><h3>Backup / restore data</h3><p class="muted">Export a JSON backup regularly. Importing a backup replaces data on this device.</p></div><div class="backup-actions"><button id="exportBtn" class="outline">Export backup</button><label class="outline file-button">Import backup<input id="importFile" type="file" accept="application/json,.json" hidden></label></div></div>
+          <div id="settingsMessage" class="message"></div>
+          <div class="warning"><strong>Important:</strong> This version saves data in this browser on this device. It survives closing the app, but it does not automatically sync to another phone/computer. Use Export backup to move records to another device. For shared live data across devices, an online database and hosting are required.</div>
+        </section>
+        <footer> Poultry Farm Manager · Local data storage · <span id="footerRole"></span></footer>
+      </main>
+    </section>
+  </div>
+  <div id="modalRoot"></div>
+  <script src="app.js"></script>
+</body>
+</html>
