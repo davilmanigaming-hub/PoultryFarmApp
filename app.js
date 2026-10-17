@@ -1,200 +1,35 @@
-(() => {
-  "use strict";
-  const DB_KEY = "poultryFarmManager_v1";
-  const $ = (id) => document.getElementById(id);
-  const money = (n) => new Intl.NumberFormat("en-IN", {style:"currency",currency:"INR",maximumFractionDigits:2}).format(Number(n)||0);
-  const nowISO = () => new Date().toISOString();
-  const localDate = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
-  const dateTime = (iso) => new Date(iso).toLocaleString("en-IN", {dateStyle:"medium",timeStyle:"short"});
-  const escapeHTML = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const makeId = () => (crypto && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  let currentUser = null;
-  let activeTab = "sell";
-
-  function freshDB() {
-    return {version:1, users:[{id:"admin-default",username:"admin",password:"Farm@123",role:"admin",createdAt:nowISO()}],
-      stockStart:null, stockAdditions:[], sales:[], createdAt:nowISO()};
-  }
-  function loadDB() {
-    try {
-      const raw = localStorage.getItem(DB_KEY);
-      if (!raw) { const db=freshDB(); saveDB(db); return db; }
-      const parsed=JSON.parse(raw);
-      if (!parsed || !Array.isArray(parsed.users) || !Array.isArray(parsed.sales)) throw new Error("Invalid data");
-      parsed.stockAdditions ||= []; parsed.sales ||= []; parsed.users ||= [];
-      return parsed;
-    } catch (e) {
-      alert("Saved app data could not be read. If you have a backup, restore it from Settings. A fresh database will be created only if no usable data is found.");
-      return freshDB();
-    }
-  }
-  let db = loadDB();
-  function saveDB(next=db) { db=next; localStorage.setItem(DB_KEY, JSON.stringify(db)); }
-  function isAdmin() { return currentUser && currentUser.role === "admin"; }
-  function totalStock() { return (Number(db.stockStart)||0) + db.stockAdditions.reduce((s,x)=>s+Number(x.count||0),0); }
-  function soldCount() { return db.sales.reduce((s,x)=>s+Number(x.roosters||0),0); }
-  function remaining() { return Math.max(0,totalStock()-soldCount()); }
-  function totalRevenue() { return db.sales.reduce((s,x)=>s+Number(x.amount||0),0); }
-  function setMessage(id, text, isError=false) { const el=$(id); if(el){el.textContent=text; el.style.color=isError?"#c32635":"#087443";} }
-
-  function showLogin() {
-    $("loginView").classList.remove("hidden"); $("mainView").classList.add("hidden");
-    $("loginPassword").value=""; $("loginError").textContent="";
-  }
-  function showApp() {
-    $("loginView").classList.add("hidden"); $("mainView").classList.remove("hidden");
-    $("currentUser").textContent=`${currentUser.username} · ${currentUser.role}`;
-    $("footerRole").textContent=isAdmin()?"Administrator access":"User access";
-    document.querySelectorAll(".admin-only").forEach(el=>el.classList.toggle("hidden",!isAdmin()));
-    $("todayLabel").textContent=new Date().toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short",year:"numeric"});
-    $("welcomeTitle").textContent=`Welcome, ${currentUser.username}`;
-    renderAll(); switchTab("sell");
-    if(db.stockStart===null && isAdmin()) showStockSetup();
-  }
-  function showStockSetup() {
-    const existing=$("stockSetupModal"); if(existing) existing.remove();
-    const wrap=document.createElement("div"); wrap.id="stockSetupModal"; wrap.className="modal-backdrop";
-    wrap.innerHTML=`<div class="modal"><h2>Set your starting stock</h2><p>How many roosters are currently available in your farm? You can add more stock later.</p><form id="stockSetupForm"><div class="field"><label for="initialStock">Number of roosters</label><input id="initialStock" type="number" min="0" step="1" required value="0"></div><div class="modal-actions"><button class="primary" type="submit">Save Starting Stock</button></div></form></div>`;
-    $("modalRoot").appendChild(wrap);
-    $("stockSetupForm").addEventListener("submit",e=>{e.preventDefault();const n=Number($("initialStock").value);if(!Number.isInteger(n)||n<0)return;db.stockStart=n;saveDB();wrap.remove();renderAll();});
-  }
-  function switchTab(tab) {
-    if((tab==="users"||tab==="stock")&&!isAdmin()) tab="sell";
-    activeTab=tab;
-    document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
-    document.querySelectorAll(".tab-panel").forEach(p=>p.classList.add("hidden"));
-    $(`${tab}Panel`).classList.remove("hidden");
-    if(tab==="history") renderHistory();
-    if(tab==="users") renderUsers();
-    if(tab==="stock") renderStockHistory();
-  }
-  function renderStats() {
-    $("totalStock").textContent=totalStock();
-    $("remainingStock").textContent=remaining();
-    $("totalSales").textContent=money(totalRevenue());
-    $("soldCount").textContent=soldCount();
-    $("stockHelp").textContent=`Available: ${remaining()} rooster(s)`;
-    $("roostersSold").max=remaining();
-  }
-  function renderAll(){renderStats();renderHistory();if(isAdmin()){renderUsers();renderStockHistory();}}
-  function renderHistory() {
-    const list=$("historyList"); if(!list) return;
-    const q=($("historySearch")?.value||"").trim().toLowerCase();
-    const date=$("historyDate")?.value||"";
-    const records=[...db.sales].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).filter(s=>
-      (!date||localDate(s.createdAt)===date) &&
-      (!q||`${s.customer||""} ${s.username||""} ${s.id}`.toLowerCase().includes(q)));
-    list.innerHTML=records.map(s=>`<article class="sale-card">
-      <div class="sale-main"><div class="sale-title">Sale · ${escapeHTML(s.customer||"Walk-in customer")} <span class="role-badge">${escapeHTML(s.roosters)} rooster(s)</span></div>
-      <div class="sale-meta">${escapeHTML(dateTime(s.createdAt))} · ${escapeHTML(s.weight)} kg · ${money(s.price)}/kg · recorded by ${escapeHTML(s.username)}</div>
-      <div class="sale-meta">Record ID: ${escapeHTML(s.id.slice(0,8))} · Remaining after sale: ${Math.max(0,totalStock()-db.sales.filter(x=>x.createdAt<=s.createdAt).reduce((n,x)=>n+Number(x.roosters),0))}</div></div>
-      <div><div class="sale-amount">${money(s.amount)}</div><div class="sale-actions"><button class="outline small" data-view="${escapeHTML(s.id)}">Details</button>${isAdmin()?`<button class="danger" data-delete-sale="${escapeHTML(s.id)}">Delete</button>`:""}</div></div>
-    </article>`).join("");
-    $("historyEmpty").classList.toggle("hidden",records.length!==0);
-    list.querySelectorAll("[data-delete-sale]").forEach(b=>b.addEventListener("click",()=>confirmDeleteSale(b.dataset.deleteSale)));
-    list.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>showSaleDetails(b.dataset.view)));
-  }
-  function showSaleDetails(id) {
-    const s=db.sales.find(x=>x.id===id); if(!s)return;
-    const wrap=document.createElement("div");wrap.className="modal-backdrop";
-    wrap.innerHTML=`<div class="modal"><h2>Sale details</h2><p><strong>Date:</strong> ${escapeHTML(dateTime(s.createdAt))}<br><strong>Customer:</strong> ${escapeHTML(s.customer||"Walk-in customer")}<br><strong>Roosters:</strong> ${s.roosters}<br><strong>Total weight:</strong> ${s.weight} kg<br><strong>Rate:</strong> ${money(s.price)}/kg<br><strong>Total amount:</strong> ${money(s.amount)}<br><strong>Recorded by:</strong> ${escapeHTML(s.username)}<br><strong>Record ID:</strong> ${escapeHTML(s.id)}</p><div class="modal-actions"><button class="primary" type="button">Close</button></div></div>`;
-    $("modalRoot").appendChild(wrap);wrap.querySelector("button").addEventListener("click",()=>wrap.remove());wrap.addEventListener("click",e=>{if(e.target===wrap)wrap.remove();});
-  }
-  function confirmDeleteSale(id) {
-    const s=db.sales.find(x=>x.id===id);if(!s||!isAdmin())return;
-    const wrap=document.createElement("div");wrap.className="modal-backdrop";
-    wrap.innerHTML=`<div class="modal"><h2>Delete this sale?</h2><p>This removes the ${s.roosters} rooster(s) sale record for ${money(s.amount)}. The remaining stock count will be recalculated automatically.</p><div class="modal-actions"><button class="outline" data-cancel>Cancel</button><button class="danger" data-confirm>Delete sale</button></div></div>`;
-    $("modalRoot").appendChild(wrap);
-    wrap.querySelector("[data-cancel]").onclick=()=>wrap.remove();
-    wrap.querySelector("[data-confirm]").onclick=()=>{db.sales=db.sales.filter(x=>x.id!==id);saveDB();wrap.remove();renderAll();};
-  }
-  function renderStockHistory() {
-    const el=$("stockHistory");if(!el)return;
-    const items=[...(db.stockAdditions||[])].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
-    el.innerHTML=items.length?items.map(x=>`<div class="stock-entry"><span>+${x.count} rooster(s) · ${escapeHTML(dateTime(x.createdAt))} · ${escapeHTML(x.username)}</span><strong>Added</strong></div>`).join(""):`<div class="empty-state">No stock additions recorded.</div>`;
-  }
-  function renderUsers() {
-    const el=$("userList");if(!el)return;
-    el.innerHTML=db.users.map(u=>`<div class="user-row"><div><div class="user-name">${escapeHTML(u.username)} <span class="role-badge ${u.role==="admin"?"admin":""}">${u.role==="admin"?"Admin":"User"}</span></div><div class="user-sub">Created ${escapeHTML(dateTime(u.createdAt))}${u.id===currentUser.id?" · You":""}</div></div><div>${u.id!==currentUser.id?`<button class="danger" data-remove-user="${escapeHTML(u.id)}">Remove</button>`:`<span class="user-sub">Current account</span>`}</div></div>`).join("");
-    el.querySelectorAll("[data-remove-user]").forEach(b=>b.addEventListener("click",()=>removeUser(b.dataset.removeUser)));
-  }
-  function removeUser(id) {
-    if(!isAdmin())return;
-    const u=db.users.find(x=>x.id===id);if(!u)return;
-    if(u.role==="admin"&&db.users.filter(x=>x.role==="admin").length<=1){setMessage("userMessage","You cannot remove the only admin account.",true);return;}
-    if(!confirm(`Remove account "${u.username}"? They will no longer be able to log in.`))return;
-    db.users=db.users.filter(x=>x.id!==id);saveDB();renderUsers();setMessage("userMessage",`Account ${u.username} removed.`);
-  }
-  function setPricePreview() {
-    const price=Number(document.querySelector('input[name="price"]:checked')?.value||300);
-    const weight=Number($("weightKg").value)||0;
-    $("ratePreview").textContent=`${money(price)} / kg`;
-    $("amountPreview").textContent=money(price*weight);
-  }
-
-  $("loginForm").addEventListener("submit",e=>{
-    e.preventDefault();const username=$("loginUsername").value.trim().toLowerCase(),password=$("loginPassword").value;
-    const user=db.users.find(u=>u.username.toLowerCase()===username&&u.password===password);
-    if(!user){$("loginError").textContent="Incorrect username or password. Ask the farm admin to create an account.";return;}
-    currentUser=user;showApp();
-  });
-  $("logoutBtn").addEventListener("click",()=>{currentUser=null;showLogin();});
-  document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>switchTab(b.dataset.tab)));
-  document.querySelectorAll('input[name="price"]').forEach(x=>x.addEventListener("change",setPricePreview));
-  $("weightKg").addEventListener("input",setPricePreview);
-  $("saleForm").addEventListener("reset",()=>setTimeout(()=>{setPricePreview();setMessage("saleMessage","");},0));
-  $("saleForm").addEventListener("submit",e=>{
-    e.preventDefault();if(!currentUser)return;
-    const roosters=Number($("roostersSold").value),weight=Number($("weightKg").value),price=Number(document.querySelector('input[name="price"]:checked')?.value||300);
-    if(!Number.isInteger(roosters)||roosters<1){setMessage("saleMessage","Enter a whole number of roosters greater than zero.",true);return;}
-    if(roosters>remaining()){setMessage("saleMessage",`Only ${remaining()} rooster(s) are available. Update stock or change the quantity.`,true);return;}
-    if(!Number.isFinite(weight)||weight<=0){setMessage("saleMessage","Enter a valid total weight greater than zero.",true);return;}
-    const sale={id:makeId(),createdAt:nowISO(),roosters,weight:Number(weight.toFixed(2)),price,amount:Number((weight*price).toFixed(2)),customer:$("customerName").value.trim(),username:currentUser.username};
-    db.sales.push(sale);saveDB();$("saleForm").reset();renderAll();
-    setMessage("saleMessage",`Sale saved: ${roosters} rooster(s), ${weight.toFixed(2)} kg × ${money(price)} = ${money(sale.amount)}. Remaining: ${remaining()}.`);
-    setPricePreview();
-  });
-  $("historySearch").addEventListener("input",renderHistory);
-  $("historyDate").addEventListener("change",renderHistory);
-  $("clearFilters").addEventListener("click",()=>{$("historySearch").value="";$("historyDate").value="";renderHistory();});
-  $("stockForm").addEventListener("submit",e=>{
-    e.preventDefault();if(!isAdmin())return;
-    const count=Number($("stockAdd").value);if(!Number.isInteger(count)||count<1)return;
-    if(db.stockStart===null)db.stockStart=0;
-    db.stockAdditions.push({id:makeId(),count,createdAt:nowISO(),username:currentUser.username});saveDB();$("stockForm").reset();renderAll();
-    alert(`${count} rooster(s) added. Remaining stock: ${remaining()}.`);
-  });
-  $("userForm").addEventListener("submit",e=>{
-    e.preventDefault();if(!isAdmin())return;
-    const username=$("newUsername").value.trim(),password=$("newPassword").value,role=$("newRole").value;
-    if(!/^[A-Za-z0-9_.-]{3,30}$/.test(username)){setMessage("userMessage","Use 3–30 letters, numbers, dots, dashes, or underscores.",true);return;}
-    if(password.length<6){setMessage("userMessage","Password must contain at least 6 characters.",true);return;}
-    if(db.users.some(u=>u.username.toLowerCase()===username.toLowerCase())){setMessage("userMessage","That username already exists.",true);return;}
-    db.users.push({id:makeId(),username,password,role,createdAt:nowISO()});saveDB();$("userForm").reset();renderUsers();setMessage("userMessage",`Account "${username}" created. Share the login details privately.`);
-  });
-  $("passwordForm").addEventListener("submit",e=>{
-    e.preventDefault();const old=$("oldPassword").value,nw=$("newOwnPassword").value;
-    const u=db.users.find(x=>x.id===currentUser.id);
-    if(!u||u.password!==old){setMessage("passwordMessage","Current password is incorrect.",true);return;}
-    if(nw.length<6){setMessage("passwordMessage","New password must be at least 6 characters.",true);return;}
-    u.password=nw;saveDB();$("passwordForm").reset();setMessage("passwordMessage","Password updated successfully.");
-  });
-  $("exportBtn").addEventListener("click",()=>{
-    const blob=new Blob([JSON.stringify(db,null,2)],{type:"application/json"});
-    const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`poultry-farm-backup-${localDate(nowISO())}.json`;a.click();URL.revokeObjectURL(url);setMessage("settingsMessage","Backup exported. Store it somewhere safe.");
-  });
-  $("importFile").addEventListener("change",async e=>{
-    const file=e.target.files?.[0];if(!file)return;
-    if(!isAdmin()){setMessage("settingsMessage","Only an admin can restore a backup.",true);e.target.value="";return;}
-    try{
-      const imported=JSON.parse(await file.text());
-      if(!imported||!Array.isArray(imported.users)||!Array.isArray(imported.sales)||!Array.isArray(imported.stockAdditions))throw new Error("This file is not a valid Poultry Farm Manager backup.");
-      if(!confirm("Importing will replace all data on this device. Continue?"))return;
-      db=imported;saveDB();currentUser=db.users.find(u=>u.id===currentUser.id)||db.users.find(u=>u.role==="admin")||null;
-      if(!currentUser){showLogin();return;}showApp();setMessage("settingsMessage","Backup imported successfully.");
-    }catch(err){setMessage("settingsMessage",err.message||"Could not import this backup.",true);}
-    finally{e.target.value="";}
-  });
-  setPricePreview();
-  if("serviceWorker" in navigator && location.protocol!=="file:") window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
+(()=>{"use strict";
+const URL="https://bhgidxtmvmnapqzlxlbt.supabase.co",KEY="sb_publishable_OsO9gKmmdBzYPkmNjveAoA_shDtUJzq",api=window.supabase.createClient(URL,KEY),$=id=>document.getElementById(id);
+const cash=n=>new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2}).format(Number(n)||0),dt=s=>new Date(s).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}),day=s=>{let d=new Date(s);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")},esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let user=null,profile=null,db={stockStart:null,sales:[],stockAdditions:[],users:[]};const admin=()=>profile?.role==="admin"&&profile?.approved===true;
+function msg(id,s,b=false){let e=$(id);if(e){e.textContent=s;e.style.color=b?"#c32635":"#087443"}}function login(s=""){user=null;profile=null;$("loginView").classList.remove("hidden");$("mainView").classList.add("hidden");$("loginPassword").value="";msg("loginError",s,true)}
+function total(){return (Number(db.stockStart)||0)+db.stockAdditions.reduce((n,x)=>n+Number(x.count),0)}function sold(){return db.sales.reduce((n,x)=>n+Number(x.roosters),0)}function left(){return Math.max(0,total()-sold())}function revenue(){return db.sales.reduce((n,x)=>n+Number(x.amount),0)}
+async function load(){if(!user)return;let p=await api.from("profiles").select("id,email,username,role,approved").eq("id",user.id).maybeSingle();if(p.error)throw p.error;if(!p.data?.approved){await api.auth.signOut();login("Your account is awaiting owner approval.");return}profile=p.data;
+let r=await Promise.all([api.from("farm_settings").select("starting_stock").eq("id",1).single(),api.from("sales").select("*").order("created_at",{ascending:false}),api.from("stock_additions").select("*").order("created_at",{ascending:false})]);for(let x of r)if(x.error)throw x.error;db.stockStart=r[0].data.starting_stock;db.sales=r[1].data.map(x=>({...x,createdAt:x.created_at,weight:Number(x.weight),amount:Number(x.amount)}));db.stockAdditions=r[2].data.map(x=>({...x,createdAt:x.created_at}));db.users=[];if(admin()){let u=await api.from("profiles").select("id,email,username,role,approved").order("created_at");if(u.error)throw u.error;db.users=u.data}
+render();$("loginView").classList.add("hidden");$("mainView").classList.remove("hidden");$("currentUser").textContent=profile.username+" · "+profile.role;$("footerRole").textContent=admin()?"Owner access · Cloud synced":"Approved user · Cloud synced";document.querySelectorAll(".admin-only").forEach(e=>e.classList.toggle("hidden",!admin()));$("todayLabel").textContent=new Date().toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short",year:"numeric"});$("welcomeTitle").textContent="Welcome, "+profile.username;tab("sell");if(db.stockStart===null&&admin())setupStock()}
+async function refresh(){try{await load()}catch(e){console.error(e);msg("saleMessage",e.message||"Cloud sync failed.",true)}}
+function render(){$("totalStock").textContent=total();$("remainingStock").textContent=left();$("totalSales").textContent=cash(revenue());$("soldCount").textContent=sold();$("stockHelp").textContent="Available: "+left()+" rooster(s)";$("roostersSold").max=left();history();if(admin()){users();stockHistory()}}
+function tab(n){if((n==="users"||n==="stock")&&!admin())n="sell";document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.tab===n));document.querySelectorAll(".tab-panel").forEach(x=>x.classList.add("hidden"));$(n+"Panel").classList.remove("hidden");if(n==="history")history();if(n==="users")users();if(n==="stock")stockHistory()}
+function setupStock(){if($("stockSetupModal"))return;let w=document.createElement("div");w.id="stockSetupModal";w.className="modal-backdrop";w.innerHTML='<div class="modal"><h2>Set starting stock</h2><p>How many roosters are available?</p><form id="stockSetupForm"><div class="field"><label for="initialStock">Number of roosters</label><input id="initialStock" type="number" min="0" step="1" required value="0"></div><button class="primary">Save Starting Stock</button></form></div>';$("modalRoot").appendChild(w);$("stockSetupForm").onsubmit=async e=>{e.preventDefault();let n=Number($("initialStock").value);if(!Number.isInteger(n)||n<0)return;let r=await api.from("farm_settings").update({starting_stock:n,updated_at:new Date().toISOString()}).eq("id",1);if(r.error)return msg("saleMessage",r.error.message,true);w.remove();await refresh()}}
+function history(){let el=$("historyList");if(!el)return;let q=($("historySearch").value||"").trim().toLowerCase(),d=$("historyDate").value||"",rows=[...db.sales].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).filter(s=>(!d||day(s.createdAt)===d)&&(!q||(String(s.customer||"")+" "+String(s.username||"")+" "+s.id).toLowerCase().includes(q)));el.innerHTML=rows.map(s=>'<article class="sale-card"><div class="sale-main"><div class="sale-title">Sale · '+esc(s.customer||"Walk-in customer")+' <span class="role-badge">'+s.roosters+' rooster(s)</span></div><div class="sale-meta">'+esc(dt(s.createdAt))+' · '+s.weight+' kg · '+cash(s.price)+'/kg · recorded by '+esc(s.username)+'</div><div class="sale-meta">Record ID: '+esc(s.id.slice(0,8))+'</div></div><div><div class="sale-amount">'+cash(s.amount)+'</div><div class="sale-actions"><button class="outline small" data-view="'+esc(s.id)+'">Details</button>'+(admin()?'<button class="danger" data-delete-sale="'+esc(s.id)+'">Delete</button>':"")+'</div></div></article>').join("");$("historyEmpty").classList.toggle("hidden",rows.length>0);el.querySelectorAll("[data-delete-sale]").forEach(b=>b.onclick=()=>delSale(b.dataset.deleteSale));el.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>details(b.dataset.view))}
+function details(id){let s=db.sales.find(x=>x.id===id);if(!s)return;let w=document.createElement("div");w.className="modal-backdrop";w.innerHTML='<div class="modal"><h2>Sale details</h2><p><strong>Date:</strong> '+esc(dt(s.createdAt))+'<br><strong>Customer:</strong> '+esc(s.customer||"Walk-in customer")+'<br><strong>Roosters:</strong> '+s.roosters+'<br><strong>Weight:</strong> '+s.weight+' kg<br><strong>Rate:</strong> '+cash(s.price)+'/kg<br><strong>Amount:</strong> '+cash(s.amount)+'<br><strong>Recorded by:</strong> '+esc(s.username)+'</p><button class="primary">Close</button></div>';$("modalRoot").appendChild(w);w.querySelector("button").onclick=()=>w.remove()}
+async function delSale(id){if(!admin()||!confirm("Delete this sale? Stock will be recalculated."))return;let r=await api.from("sales").delete().eq("id",id);if(r.error)return msg("saleMessage",r.error.message,true);await refresh()}
+function stockHistory(){$("stockHistory").innerHTML=db.stockAdditions.length?db.stockAdditions.map(x=>'<div class="stock-entry"><span>+'+x.count+' rooster(s) · '+esc(dt(x.createdAt))+' · '+esc(x.username)+'</span><strong>Added</strong></div>').join(""):'<div class="empty-state">No stock additions recorded.</div>'}
+function users(){$("userList").innerHTML=db.users.map(x=>'<div class="user-row"><div><div class="user-name">'+esc(x.username)+' <span class="role-badge '+(x.role==="admin"?"admin":"")+'">'+(x.role==="admin"?"Admin":"User")+'</span></div><div class="user-sub">'+esc(x.email)+' · '+(x.approved?"Approved":"Pending")+'</div></div><div>'+(x.id!==user.id?'<button class="danger" data-remove-user="'+esc(x.id)+'">Remove</button>':'<span class="user-sub">Current account</span>')+'</div></div>').join("");$("userList").querySelectorAll("[data-remove-user]").forEach(b=>b.onclick=()=>removeUser(b.dataset.removeUser))}
+async function adminCall(body){let s=await api.auth.getSession(),r=await fetch(URL+"/functions/v1/poultry-admin",{method:"POST",headers:{"Content-Type":"application/json","apikey":KEY,"Authorization":"Bearer "+(s.data.session?.access_token||"")},body:JSON.stringify(body)}),d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||"Account management failed");return d}
+async function removeUser(id){if(!admin()||!confirm("Remove this account?"))return;try{await adminCall({action:"remove_user",userId:id});await refresh();msg("userMessage","Account removed.")}catch(e){msg("userMessage",e.message,true)}}
+function pricePreview(){let p=Number(document.querySelector('input[name="price"]:checked')?.value||300),w=Number($("weightKg").value)||0;$("ratePreview").textContent=cash(p)+" / kg";$("amountPreview").textContent=cash(p*w)}
+$("loginForm").onsubmit=async e=>{e.preventDefault();try{let r=await api.auth.signInWithPassword({email:$("loginUsername").value.trim().toLowerCase(),password:$("loginPassword").value});if(r.error)throw r.error;user=r.data.user;await load()}catch(e){login(e.message||"Sign in failed.")}};
+$("ownerSetupBtn").onclick=async()=>{try{let email=$("loginUsername").value.trim().toLowerCase(),password=$("loginPassword").value;if(!email||password.length<8)throw Error("Enter your email and a password with at least 8 characters.");let r=await api.auth.signUp({email,password,options:{data:{username:email.split("@")[0]}}});if(r.error)throw r.error;if(r.data.session){user=r.data.user;await load()}else msg("loginError","Check your email to verify the owner account, then sign in. Only the first account becomes owner.")}catch(e){msg("loginError",e.message,true)}};
+$("logoutBtn").onclick=async()=>{await api.auth.signOut();login();let r=await api.rpc("owner_setup_available");$("ownerSetupBtn").classList.toggle("hidden",r.data!==true)};
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>tab(b.dataset.tab));document.querySelectorAll('input[name="price"]').forEach(x=>x.onchange=pricePreview);$("weightKg").oninput=pricePreview;
+$("saleForm").onsubmit=async e=>{e.preventDefault();let n=Number($("roostersSold").value),w=Number($("weightKg").value),p=Number(document.querySelector('input[name="price"]:checked')?.value||300);if(!Number.isInteger(n)||n<1)return msg("saleMessage","Enter a whole number of roosters greater than zero.",true);if(n>left())return msg("saleMessage","Only "+left()+" rooster(s) available.",true);if(!Number.isFinite(w)||w<=0)return msg("saleMessage","Enter a valid weight.",true);let s={roosters:n,weight:Number(w.toFixed(2)),price:p,amount:Number((w*p).toFixed(2)),customer:$("customerName").value.trim(),created_by:user.id,username:profile.username},r=await api.from("sales").insert(s);if(r.error)return msg("saleMessage",r.error.message,true);$("saleForm").reset();pricePreview();await refresh();msg("saleMessage","Sale saved: "+n+" rooster(s), "+w.toFixed(2)+" kg × "+cash(p)+" = "+cash(s.amount)+". Remaining: "+left()+".")};
+$("historySearch").oninput=history;$("historyDate").onchange=history;$("clearFilters").onclick=()=>{$("historySearch").value="";$("historyDate").value="";history()};
+$("stockForm").onsubmit=async e=>{e.preventDefault();if(!admin())return;let n=Number($("stockAdd").value);if(!Number.isInteger(n)||n<1)return;let r=await api.from("stock_additions").insert({count:n,created_by:user.id,username:profile.username});if(r.error)return msg("saleMessage",r.error.message,true);$("stockForm").reset();await refresh();alert(n+" rooster(s) added. Remaining stock: "+left()+".")};
+$("userForm").onsubmit=async e=>{e.preventDefault();try{await adminCall({action:"create_user",username:$("newUsername").value.trim(),email:$("newEmail").value.trim().toLowerCase(),password:$("newPassword").value,role:$("newRole").value});$("userForm").reset();await refresh();msg("userMessage","Approved account created. Share login details privately.")}catch(e){msg("userMessage",e.message,true)}};
+$("passwordForm").onsubmit=async e=>{e.preventDefault();try{let old=$("oldPassword").value,nw=$("newOwnPassword").value,c=await api.auth.signInWithPassword({email:user.email,password:old});if(c.error)throw Error("Current password is incorrect.");if(nw.length<8)throw Error("New password must contain at least 8 characters.");let r=await api.auth.updateUser({password:nw});if(r.error)throw r.error;$("passwordForm").reset();msg("passwordMessage","Password updated.")}catch(e){msg("passwordMessage",e.message,true)}};
+$("exportBtn").onclick=()=>{let b=new Blob([JSON.stringify({version:2,exportedAt:new Date().toISOString(),stockStart:db.stockStart,stockAdditions:db.stockAdditions,sales:db.sales},null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="poultry-cloud-backup-"+day(new Date().toISOString())+".json";a.click();URL.revokeObjectURL(a.href);msg("settingsMessage","Cloud backup exported. Keep it safe.")};
+$("importFile").onchange=async e=>{let f=e.target.files?.[0];if(!f)return;try{if(!admin())throw Error("Only the owner can restore records.");let b=JSON.parse(await f.text());if(!Array.isArray(b.sales)||!Array.isArray(b.stockAdditions))throw Error("Invalid backup file.");if(!confirm("ADD these records to the cloud without replacing existing records?"))return;if(db.stockStart===null&&Number.isInteger(Number(b.stockStart))&&Number(b.stockStart)>=0){let r=await api.from("farm_settings").update({starting_stock:Number(b.stockStart),updated_at:new Date().toISOString()}).eq("id",1);if(r.error)throw r.error}let sales=b.sales.map(s=>({created_at:s.createdAt||new Date().toISOString(),roosters:Number(s.roosters),weight:Number(Number(s.weight).toFixed(2)),price:Number(s.price),amount:Number(Number(s.amount).toFixed(2)),customer:String(s.customer||""),created_by:user.id,username:String(s.username||profile.username)})).filter(s=>Number.isInteger(s.roosters)&&s.roosters>0&&s.weight>0&&[300,350,400,450].includes(s.price)),adds=b.stockAdditions.map(s=>({count:Number(s.count),created_at:s.createdAt||new Date().toISOString(),created_by:user.id,username:String(s.username||profile.username)})).filter(s=>Number.isInteger(s.count)&&s.count>0);if(sales.length){let r=await api.from("sales").insert(sales);if(r.error)throw r.error}if(adds.length){let r=await api.from("stock_additions").insert(adds);if(r.error)throw r.error}await refresh();msg("settingsMessage","Imported "+sales.length+" sales and "+adds.length+" stock additions; existing records were kept.")}catch(e){msg("settingsMessage",e.message,true)}finally{e.target.value=""}};
+$("clearBatchBtn").onclick=async()=>{if(!admin()||!confirm("This permanently deletes ALL cloud sales and stock additions for this batch and resets starting stock. Export a backup first if needed. Continue?"))return;let r=await api.rpc("clear_poultry_batch");if(r.error)return msg("settingsMessage",r.error.message,true);await refresh();msg("settingsMessage","Batch cleared. Enter the new starting rooster count when prompted.")};
+async function boot(){pricePreview();if("serviceWorker"in navigator&&location.protocol!=="file:")window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));try{let o=await api.rpc("owner_setup_available");if(o.data===true)$("ownerSetupBtn").classList.remove("hidden");let s=await api.auth.getSession();if(s.error)throw s.error;if(s.data.session){user=s.data.session.user;await load()}else login()}catch(e){console.error(e);login("Cloud connection error: "+(e.message||"reload and try again"))}}boot();
 })();
