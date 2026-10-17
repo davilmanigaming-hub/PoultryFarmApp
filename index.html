@@ -16,14 +16,15 @@
         <h1>Poultry Farm Manager</h1>
         <p class="muted">Track stock, calculate sales, and keep your records.</p>
         <form id="loginForm">
-          <label for="loginUsername">Username</label>
-          <input id="loginUsername" autocomplete="username" required placeholder="Enter username">
+          <label for="loginUsername">Email address</label>
+          <input id="loginUsername" type="email" autocomplete="username" required placeholder="Enter your email address">
           <label for="loginPassword">Password</label>
           <input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Enter password">
           <button class="primary full" type="submit">Login</button>
+          <button id="ownerSetupBtn" class="outline full hidden" type="button">Set Up Farm Owner Account</button>
           <p id="loginError" class="error" role="alert"></p>
         </form>
-        <div class="hint"><strong>First login:</strong> username <code>admin</code> · password <code>Farm@123</code><br>Change the password after logging in.</div>
+        <div class="hint">Sign in with your approved farm account. The first account can set up the farm owner. The owner creates approved accounts for other workers.</div>
       </div>
     </section>
 
@@ -68,7 +69,7 @@
         </section>
 
         <section id="historyPanel" class="panel tab-panel hidden">
-          <div class="panel-heading history-heading"><div><h2>Sales History</h2><p class="muted">Saved on this device and retained after closing the app.</p></div><div class="history-filters"><input id="historySearch" placeholder="Search customer or record" aria-label="Search history"><input id="historyDate" type="date" aria-label="Filter by date"><button id="clearFilters" class="outline small">Clear filters</button></div></div>
+          <div class="panel-heading history-heading"><div><h2>Sales History</h2><p class="muted">Cloud-saved sales shared across your approved devices.</p></div><div class="history-filters"><input id="historySearch" placeholder="Search customer or record" aria-label="Search history"><input id="historyDate" type="date" aria-label="Filter by date"><button id="clearFilters" class="outline small">Clear filters</button></div></div>
           <div id="historyList" class="history-list"></div>
           <div id="historyEmpty" class="empty-state hidden">No sales recorded yet.</div>
         </section>
@@ -84,7 +85,8 @@
           <div class="panel-heading"><div><h2>Manage Users</h2><p class="muted">Only the admin can approve access by creating accounts.</p></div></div>
           <form id="userForm" class="user-form">
             <div class="field"><label for="newUsername">Username</label><input id="newUsername" required minlength="3" maxlength="30" pattern="[A-Za-z0-9_.-]+" placeholder="e.g. worker01"></div>
-            <div class="field"><label for="newPassword">Temporary password</label><input id="newPassword" type="password" required minlength="6" placeholder="At least 6 characters"></div>
+            <div class="field"><label for="newEmail">User email address</label><input id="newEmail" type="email" required placeholder="worker@example.com"></div>
+            <div class="field"><label for="newPassword">Temporary password</label><input id="newPassword" type="password" required minlength="8" placeholder="At least 8 characters"></div>
             <div class="field"><label for="newRole">Permission level</label><select id="newRole"><option value="user">User — record and view sales</option><option value="admin">Admin — full control</option></select></div>
             <button class="primary" type="submit">＋ Create Account</button>
           </form>
@@ -95,15 +97,17 @@
         <section id="settingsPanel" class="panel tab-panel hidden">
           <div class="panel-heading"><div><h2>Settings & Security</h2><p class="muted">Keep your account secure and export a backup of your records.</p></div></div>
           <form id="passwordForm" class="settings-form"><h3>Change my password</h3><div class="field"><label for="oldPassword">Current password</label><input id="oldPassword" type="password" required></div><div class="field"><label for="newOwnPassword">New password</label><input id="newOwnPassword" type="password" minlength="6" required></div><button class="primary" type="submit">Update Password</button><p id="passwordMessage" class="message"></p></form>
-          <div class="backup-row"><div><h3>Backup / restore data</h3><p class="muted">Export a JSON backup regularly. Importing a backup replaces data on this device.</p></div><div class="backup-actions"><button id="exportBtn" class="outline">Export backup</button><label class="outline file-button">Import backup<input id="importFile" type="file" accept="application/json,.json" hidden></label></div></div>
+          <div class="backup-row"><div><h3>Backup / restore data</h3><p class="muted">Export a cloud backup. Importing adds records without replacing existing cloud records.</p></div><div class="backup-actions"><button id="exportBtn" class="outline">Export backup</button><label class="outline file-button">Import backup<input id="importFile" type="file" accept="application/json,.json" hidden></label></div></div>
           <div id="settingsMessage" class="message"></div>
-          <div class="warning"><strong>Important:</strong> This version saves data in this browser on this device. It survives closing the app, but it does not automatically sync to another phone/computer. Use Export backup to move records to another device. For shared live data across devices, an online database and hosting are required.</div>
+          <div class="backup-row"><div><h3>Start a new batch</h3><p class="muted">This permanently clears all cloud sales and stock additions, then asks for a new starting stock. Export a backup first if you may need the old records.</p></div><div class="backup-actions"><button id="clearBatchBtn" class="danger" type="button">Clear Current Batch</button></div></div>
+          <div class="warning"><strong>Cloud storage enabled:</strong> approved users share the same farm records across devices. Keep your login private and export backups regularly.</div>
         </section>
         <footer> Poultry Farm Manager · Local data storage · <span id="footerRole"></span></footer>
       </main>
     </section>
   </div>
   <div id="modalRoot"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>
 </body>
 </html>
